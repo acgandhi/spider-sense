@@ -2,6 +2,7 @@
 swigwin-4.0.2/
 virtualenvironment/
 models/
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
