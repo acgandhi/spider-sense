@@ -1,10 +1,6 @@
 # directories to ignore
-#plot-results/
-#results/
-#testing/
 swigwin-4.0.2/
 virtualenvironment/
-models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
