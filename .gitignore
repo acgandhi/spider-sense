@@ -1,6 +1,7 @@
 # directories to ignore
 swigwin-4.0.2/
 virtualenvironment/
+models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
