@@ -1,10 +1,16 @@
 # directories to ignore
-swigwin-4.0.2/
+swigwin-4.0.2/	
 virtualenvironment/
 models/
 results/
 testing/
 plot-results/
+annotations/
+knife_images/
+train2014/
+yolov5/
+pistol-dataset/
+train_labels_COCO/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
