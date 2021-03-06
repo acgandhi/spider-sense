@@ -1,5 +1,10 @@
 # directories to ignore
+<<<<<<< Updated upstream
 swigwin-4.0.2/	
+=======
+JPEGImages/
+swigwin-4.0.2/
+>>>>>>> Stashed changes
 virtualenvironment/
 models/
 results/
