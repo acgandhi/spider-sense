@@ -11,7 +11,6 @@ results/
 testing/
 plot-results/
 annotations/
-knife_images/
 train2014/
 yolov5/
 pistol-dataset/
