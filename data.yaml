@@ -1,5 +1,5 @@
-train: ../train/images
-val: ../valid/images
+train: /content/export/train/images
+val: /content/export/valid/images
 
-nc: 1
-names: ['pistol']
+nc: 2
+names: ['pistol', 'knife']
