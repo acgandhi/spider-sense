@@ -15,6 +15,7 @@ train2014/
 yolov5/
 pistol-dataset/
 train_labels_COCO/
+knife_images/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
