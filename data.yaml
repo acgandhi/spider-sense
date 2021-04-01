@@ -2,4 +2,4 @@ train: /content/export/train/images
 val: /content/export/valid/images
 
 nc: 2
-names: ['pistol', 'knife']
+names: ['pistol', 'knife', 'rifle']
