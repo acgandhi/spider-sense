@@ -1,5 +1,5 @@
 # directories to ignore
-<<<<<<< Updated upstream
+i<<<<<<< Updated upstream
 swigwin-4.0.2/	
 =======
 JPEGImages/
@@ -16,7 +16,7 @@ yolov5/
 pistol-dataset/
 train_labels_COCO/
 knife_images/
-emotion-classifier/images
+Emotion_Classifier/images/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
