@@ -16,6 +16,7 @@ yolov5/
 pistol-dataset/
 train_labels_COCO/
 knife_images/
+emotion-classifier/images
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
