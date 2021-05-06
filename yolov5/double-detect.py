@@ -68,7 +68,6 @@ def spider_sense(headDet, weapDet, im0, thres):
                 continue
             width = float((detection[2] - detection[0]) / im0.shape[1])
             if width >= headThres[thres]:
-                detections[3] = True
                 context = 0
                 tempDet = detection
                 ic(len(headDet))
@@ -87,6 +86,12 @@ def spider_sense(headDet, weapDet, im0, thres):
                     detections[0] = True
                     break
             print("WIDTH:", width)
+    elif len(headDet) < 5:
+        for detection in headDet[-1]:
+            width = float((detection[2] - detection[0]) / im0.shape[1])
+            if width >= headThres[thres]:
+                detections[3] = True
+                break
     noContext = 0
     if len(weapDet[-1]) > 0 and len(weapDet) == 5:
         for detection in weapDet[-1]:
