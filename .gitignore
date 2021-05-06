@@ -12,7 +12,6 @@ testing/
 plot-results/
 annotations/
 train2014/
-yolov5/
 pistol-dataset/
 train_labels_COCO/
 knife_images/
