@@ -6,6 +6,7 @@ import os
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
+import numpy as np
 from numpy import random
 
 import facenet_pytorch
@@ -110,9 +111,9 @@ def spider_sense(headDet, weapDet, im0, thres):
     return detections
 
 
-def detect(mtcnn, save_img=False):
+def detect(mtcnn, save_img=False):   
     numDet = []
-    source, weights, view_img, save_txt, imgsz = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
+    source, weights, weights2, view_img, save_txt, imgsz = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://'))
 
@@ -128,6 +129,7 @@ def detect(mtcnn, save_img=False):
 
     # Load models
     model = attempt_load(weights, map_location=device)
+    model2 = attempt_load(weights2, map_location=device)
     stride = int(model.stride.max())  # model strides
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
     if half:
@@ -145,6 +147,7 @@ def detect(mtcnn, save_img=False):
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
+    names2 = model2.module.names if hasattr(model2, 'module') else model2.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
     # Run inference
@@ -152,15 +155,20 @@ def detect(mtcnn, save_img=False):
     numWeapons = 0
     headDet = []
     weapDet = []
-    for path, img, im0s, vid_cap in dataset:
-        # Do first round of predictions
-        print(img.shape)
-        boxes = mtcnn.detect(img)
+    for path, img, im0s, vid_cap in dataset:        
+        print("\n")
+        t1 = time_synchronized()
+        
+        # Starting first round of detections
+        actualImg = cv2.cvtColor(cv2.imread("/content/spider-sense/ivan_test_pics/white_ivan.png"), cv2.COLOR_BGR2RGB)
+        myImg = np.dstack((img[0], img[1], img[2]))
+
+        boxes = mtcnn.detect(myImg)
         pred = [box for box in boxes[0].tolist()]
         for i in range(0, len(pred)):
             pred[i].append(boxes[1][i])
             pred[i].append(2)
-        print("POOP", pred)
+        pred = torch.tensor([pred])
 
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -184,8 +192,10 @@ def detect(mtcnn, save_img=False):
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+                        
             if len(det):
                 # Rescale boxes from img_size to im0 size
+                print(img.shape[2:], det[:, :4], im0.shape)
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
                 # for detection in det[:, :4]:
                 # print(str((detection[2]-detection[0])/im0.shape[1]))
@@ -193,7 +203,7 @@ def detect(mtcnn, save_img=False):
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+                    s += f"{n} {names2[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
@@ -204,9 +214,9 @@ def detect(mtcnn, save_img=False):
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if save_img or view_img:  # Add bbox to image
-                        label = f'{names[int(cls)]} {conf:.2f}'
+                        label = f'{names2[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-
+        
         print("2nd Round")
 
         # Do second round of predictions
