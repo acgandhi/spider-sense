@@ -9,8 +9,6 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 from numpy import random
 
-import facenet_pytorch
-from facenet_pytorch import MTCNN, InceptionResnetV1
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
@@ -116,7 +114,7 @@ def spider_sense(headDet, weapDet, im0, thres):
     return detections
 
 
-def detect(mtcnn, save_img=False):   
+def detect(save_img=False):   
     numDet = []
     source, weights, weights2, view_img, save_txt, imgsz = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
@@ -136,6 +134,7 @@ def detect(mtcnn, save_img=False):
     model = attempt_load(weights, map_location=device)
     model2 = attempt_load(weights2, map_location=device)
     stride = int(model.stride.max())  # model strides
+    stride2 = int(model2.stride.max()) # model 2 strides
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
     if half:
         model.half()  # to FP16
@@ -154,6 +153,7 @@ def detect(mtcnn, save_img=False):
     names = model.module.names if hasattr(model, 'module') else model.names
     names2 = model2.module.names if hasattr(model2, 'module') else model2.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    colors2 = [[random.randint(0, 255) for _ in range(3)] for _ in names2]
 
     # Run inference
     t0 = time.time()
@@ -163,17 +163,6 @@ def detect(mtcnn, save_img=False):
     for path, img, im0s, vid_cap in dataset:        
         print("\n")
         t1 = time_synchronized()
-        
-        # Starting first round of detections
-        actualImg = cv2.cvtColor(cv2.imread("/content/spider-sense/ivan_test_pics/white_ivan.png"), cv2.COLOR_BGR2RGB)
-        myImg = np.dstack((img[0], img[1], img[2]))
-
-        boxes = mtcnn.detect(myImg)
-        pred = [box for box in boxes[0].tolist()]
-        for i in range(0, len(pred)):
-            pred[i].append(boxes[1][i])
-            pred[i].append(2)
-        pred = torch.tensor([pred])
 
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -181,6 +170,17 @@ def detect(mtcnn, save_img=False):
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
         
+        # Do first round of predictions
+        if device.type != 'cpu':
+            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+
+        # Inference
+        pred = model(img, augment=opt.augment)[0]
+
+        # Apply NMS
+        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        t2 = time_synchronized()
+
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             numDet.append(len(det))
@@ -223,6 +223,9 @@ def detect(mtcnn, save_img=False):
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
         
         print("2nd Round")
+        model = model2
+        names = names2
+        colors = colors2
 
         # Do second round of predictions
         if device.type != 'cpu':
@@ -342,12 +345,9 @@ if __name__ == '__main__':
     # check_requirements()
 
     with torch.no_grad():
-        elDevice = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        print('Running on device: {}'.format(elDevice))
-        mtcnn = MTCNN(factor=0.25, keep_all=True, device=elDevice)
         if opt.update:  # update all models (to fix SourceChangeWarning)
             for opt.weights in ['yolov5s.pt', 'yolov5m.pt', 'yolov5l.pt', 'yolov5x.pt']:
-                detect(mtcnn)
+                detect()
                 strip_optimizer(opt.weights)
         else:
-            detect(mtcnn)
+            detect()
