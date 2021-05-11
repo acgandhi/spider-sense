@@ -71,8 +71,6 @@ def spider_sense(headDet, weapDet, im0, thres):
                 ic(len(headDet))
                 for i in range(3, -1, -1):  # each frame
                     for j in range(0, len(headDet[i])):  # each detection in frame
-                        print(tempDet)
-                        print(headDet[i][j])
                         if ic(bbox_iou(tempDet, headDet[i][j], DIoU=True)) >= 0.1542:
                             context += 1
                             tempDet = headDet[i][j]
@@ -98,8 +96,6 @@ def spider_sense(headDet, weapDet, im0, thres):
             ic(len(weapDet))
             for i in range(3, -1, -1):                  # each frame
                 for j in range(0, len(weapDet[i])):     # each detection in frame
-                    print(tempDet)
-                    print(weapDet[i][j])
                     if tempDet[5] == weapDet[i][j][5] and ic(bbox_iou(tempDet, weapDet[i][j], DIoU=True)) >= 0.1542:
                         context += 1
                         tempDet = weapDet[i][j]
@@ -138,6 +134,7 @@ def detect(save_img=False):
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
     if half:
         model.half()  # to FP16
+        model2.half() # to FP16 too
 
     # Set Dataloader
     vid_path, vid_writer = None, None
@@ -184,9 +181,9 @@ def detect(save_img=False):
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             numDet.append(len(det))
-            headDet.append(det.clone())
-            if len(headDet) > 5:
-                headDet.pop(0)
+            weapDet.append(det.clone())
+            if len(weapDet) > 5:
+                weapDet.pop(0)
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i], dataset.count
             else:
@@ -229,7 +226,7 @@ def detect(save_img=False):
 
         # Do second round of predictions
         if device.type != 'cpu':
-            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model2.parameters())))  # run once
 
         # Inference
         pred = model(img, augment=opt.augment)[0]
@@ -241,9 +238,9 @@ def detect(save_img=False):
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             numWeapons += len(det)
-            weapDet.append(det.clone())
-            if len(weapDet) > 5:
-                weapDet.pop(0)
+            headDet.append(det.clone())
+            if len(headDet) > 5:
+                headDet.pop(0)
             numDet.append(len(det))
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i], dataset.count
