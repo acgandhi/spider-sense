@@ -20,68 +20,34 @@ from icecream import ic
 
 
 def spider_sense(headDet, weapDet, im0, thres):
-    print("Starting Spider-Sense")
     detections = [False, False, 0, False]
     # print(len(headDet), headDet)
     # print(len(weapDet), weapDet)
     headThres = {2: 0.21, 3: 0.15}
-    # remove detections that are incredibly overlapping and have same class
+    # removing detections that don't meet the necessary width threshold
     for i in range(0, len(headDet[-1])):
-        if headDet[-1][i] is False:
-            continue
-        for j in range(i + 1, len(headDet[-1])):
-            if headDet[-1][j] is False:
-                continue
-            iou = bbox_iou(headDet[-1][i], headDet[-1][j])
-            print(iou)
-            if iou >= 0.85:
-                # print("clone detect")
-                if headDet[-1][j][4] > headDet[-1][i][4]:
-                    headDet[-1][i] = False
-                    break
-                else:
-                    headDet[-1][j] = False
-    for i in range(0, len(weapDet[-1])):
-        if weapDet[-1][i] is False:
-            continue
-        for j in range(i + 1, len(weapDet[-1])):
-            if weapDet[-1][j] is False:
-                continue
-            if weapDet[-1][i][5] != weapDet[-1][j][5]:
-                continue
-            iou = bbox_iou(weapDet[-1][i], weapDet[-1][j])
-            print(iou)
-            if iou >= 0.85:
-                print("clone detect")
-                if weapDet[-1][j][4] > weapDet[-1][i][4]:
-                    weapDet[-1][i] = False
-                    break
-                else:
-                    weapDet[-1][j] = False
+        width = float((headDet[-1][i][2] - headDet[-1][i][0]) / im0.shape[1])
+        if width < headThres[thres]:
+            headDet[-1][i] = False
     # Checking for head width and weapons and doing context check if valid
     if len(headDet[-1]) and len(headDet) == 5:
         detections[2] += len(headDet[-1])
         for detection in headDet[-1]:
             if type(detection) == bool:
                 continue
-            width = float((detection[2] - detection[0]) / im0.shape[1])
-            if width >= headThres[thres]:
-                context = 0
-                tempDet = detection
-                ic(len(headDet))
-                for i in range(3, -1, -1):  # each frame
-                    for j in range(0, len(headDet[i])):  # each detection in frame
-                        if ic(bbox_iou(tempDet, headDet[i][j], DIoU=True)) >= 0.1542:
-                            context += 1
-                            tempDet = headDet[i][j]
-                            break
-                    if context != (4 - i):
+            context = 0
+            tempDet = detection
+            for i in range(3, -1, -1):  # each frame
+                for j in range(0, len(headDet[i])):  # each detection in frame
+                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
+                        context += 1
+                        tempDet = headDet[i][j]
                         break
-                    ic(context)
-                if context >= 3:
-                    detections[0] = True
+                if context != (4 - i):
                     break
-            print("WIDTH:", width)
+            if context >= 3:
+                detections[0] = True
+                break
     elif len(headDet) < 5:
         for detection in headDet[-1]:
             width = float((detection[2] - detection[0]) / im0.shape[1])
@@ -93,16 +59,14 @@ def spider_sense(headDet, weapDet, im0, thres):
         for detection in weapDet[-1]:
             context = 0
             tempDet = detection
-            ic(len(weapDet))
             for i in range(3, -1, -1):                  # each frame
                 for j in range(0, len(weapDet[i])):     # each detection in frame
-                    if tempDet[5] == weapDet[i][j][5] and ic(bbox_iou(tempDet, weapDet[i][j], DIoU=True)) >= 0.1542:
+                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
                         context += 1
                         tempDet = weapDet[i][j]
                         break
                 if context < (3-i):
                     break
-                ic(context)
             if context >= 3:
                 detections[1] = True
                 break
@@ -112,7 +76,7 @@ def spider_sense(headDet, weapDet, im0, thres):
 
 def detect(save_img=False):   
     numDet = []
-    source, weights, weights2, view_img, save_txt, imgsz = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size
+    source, weights, weights2, view_img, save_txt, imgsz, thres = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size, opt.headThres
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://'))
 
@@ -279,7 +243,7 @@ def detect(save_img=False):
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Checking for Spider-Sense
-            sense = spider_sense(headDet, weapDet, im0, opt.headThres)
+            sense = spider_sense(headDet, weapDet, im0, thres)
             print(len(headDet))
             print(sense[3])
             print(len(weapDet[0]) > 0)
@@ -336,7 +300,7 @@ if __name__ == '__main__':
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--headThres', type=int)
+    parser.add_argument('--headThres', type=int, default=2)
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
