@@ -19,19 +19,50 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized
 from icecream import ic
 
 
-def spider_sense(headDet, weapDet, im0, thres):
-    detections = [False, False, 0, False]
-    # print(len(headDet), headDet)
-    # print(len(weapDet), weapDet)
+def genDet(oldFrame, frame, secDet):
+    # list of inner points
+    innerPoints = []
+    # generating points
+    offset = 10
+    for i in range(0, len(secDet)):
+        inner = np.zeros((4, 1, 2), dtype=int)
+        width = float((secDet[i][2] - secDet[i][0]) / frame.shape[0])
+        height = float((secDet[i][3] - secDet[i][1]) / frame.shape[1])
+        inner[0][0][0] = width / 2 - (width / offset)
+        inner[0][0][1] = height / 2 + (height / offset)
+        inner[1][0][0] = width / 2 + (width / offset)
+        inner[1][0][1] = height / 2 - (height / offset)
+        inner[2][0][0] = width / 2 - (width / offset)
+        inner[2][0][1] = height / 2 - (height / offset)
+        inner[3][0][0] = width / 2 + (width / offset)
+        inner[3][0][1] = height / 2 + (height / offset)
+        innerPoints.append(inner)
+    for point, det in zip(innerPoints, secDet):
+        old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
+        frame_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point, None)
+        newCenter = [sum([pt[0] for pt in p1]) / 4, sum([pt[1] for pt in p1]) / 4]
+        width = float((det[2] - det[0]) / frame.shape[0])
+        height = float((det[3] - det[1]) / frame.shape[0])
+        secDet.append(torch.Tensor(
+            [newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2,
+             det[4], det[5]]))
+
+
+def spider_sense(headDet, weapDet, frames, im0, thres):
+    detections = [False, False]
     headThres = {2: 0.21, 3: 0.15}
-    # removing detections that don't meet the necessary width threshold
-    for i in range(0, len(headDet[-1])):
-        width = float((headDet[-1][i][2] - headDet[-1][i][0]) / im0.shape[1])
-        if width < headThres[thres]:
-            headDet[-1][i] = False
-    # Checking for head width and weapons and doing context check if valid
+
+    # removing head detections that don't meet the necessary width threshold
+    headDet[-1] = [det for det in headDet[-1] if float((det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
+
+    # adding new detections from second last with current if >= 2 detections
+    if len(headDet) >= 2 and len(frames) >= 2:
+        genDet(frames[-2], frames[-1], headDet[-2])
+        genDet(frames[-2], frames[-1], weapDet[-2])
+
+    # Doing context check on remaining head and weapons and changing detections if needed
     if len(headDet[-1]) and len(headDet) == 5:
-        detections[2] += len(headDet[-1])
         for detection in headDet[-1]:
             if type(detection) == bool:
                 continue
@@ -48,11 +79,54 @@ def spider_sense(headDet, weapDet, im0, thres):
             if context >= 3:
                 detections[0] = True
                 break
-    elif len(headDet) < 5:
+    noContext = 0
+    if len(weapDet[-1]) > 0 and len(weapDet) == 5:
+        for detection in weapDet[-1]:
+            context = 0
+            tempDet = detection
+            for i in range(3, -1, -1):  # each frame
+                for j in range(0, len(weapDet[i])):  # each detection in frame
+                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
+                        context += 1
+                        tempDet = weapDet[i][j]
+                        break
+                if context < (3 - i):
+                    break
+            if context >= 3:
+                detections[1] = True
+                break
+
+    return detections
+
+def old_spider_sense(headDet, weapDet, frames, im0, thres):
+    detections = [False, False]
+    headThres = {2: 0.21, 3: 0.15}
+    
+    # removing head detections that don't meet the necessary width threshold
+    headDet[-1] = [det for det in headDet[-1] if float((det[2]-det[0])/im0.shape[1]) >= headThres[thres]]
+    
+    # adding new detections from second last with current if >= 2 detections
+    if len(headDet) >= 2:
+        genDet(frames[-2], frames[-1], headDet[-2])
+        genDet(frames[-2], frames[-1], weapDet[-2])
+        
+    # Doing context check on remaining head and weapons and changing detections if needed
+    if len(headDet[-1]) and len(headDet) == 5:
         for detection in headDet[-1]:
-            width = float((detection[2] - detection[0]) / im0.shape[1])
-            if width >= headThres[thres]:
-                detections[3] = True
+            if type(detection) == bool:
+                continue
+            context = 0
+            tempDet = detection
+            for i in range(3, -1, -1):  # each frame
+                for j in range(0, len(headDet[i])):  # each detection in frame
+                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
+                        context += 1
+                        tempDet = headDet[i][j]
+                        break
+                if context != (4 - i):
+                    break
+            if context >= 3:
+                detections[0] = True
                 break
     noContext = 0
     if len(weapDet[-1]) > 0 and len(weapDet) == 5:
@@ -74,7 +148,7 @@ def spider_sense(headDet, weapDet, im0, thres):
     return detections
 
 
-def detect(save_img=False):   
+def detect(save_img=False):
     numDet = []
     source, weights, weights2, view_img, save_txt, imgsz, thres = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size, opt.headThres
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
@@ -91,14 +165,14 @@ def detect(save_img=False):
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load models
-    model = attempt_load(weights, map_location=device)
+    model1 = attempt_load(weights, map_location=device)
     model2 = attempt_load(weights2, map_location=device)
-    stride = int(model.stride.max())  # model strides
-    stride2 = int(model2.stride.max()) # model 2 strides
-    imgsz = check_img_size(imgsz, s=stride)  # check img_size
+    stride1 = int(model1.stride.max())  # model strides
+    stride2 = int(model2.stride.max())  # model 2 strides
+    imgsz = check_img_size(imgsz, s=stride1)  # check img_size
     if half:
-        model.half()  # to FP16
-        model2.half() # to FP16 too
+        model1.half()  # to FP16
+        model2.half()  # to FP16 too
 
     # Set Dataloader
     vid_path, vid_writer = None, None
@@ -108,12 +182,12 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=imgsz, stride=stride1)
     else:
         save_img = True
-        dataset = LoadImages(source, img_size=imgsz, stride=stride)
+        dataset = LoadImages(source, img_size=imgsz, stride=stride1)
 
     # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
+    names1 = model1.module.names if hasattr(model1, 'module') else model1.names
     names2 = model2.module.names if hasattr(model2, 'module') else model2.names
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    colors1 = [[random.randint(0, 255) for _ in range(3)] for _ in names1]
     colors2 = [[random.randint(0, 255) for _ in range(3)] for _ in names2]
 
     # Run inference
@@ -121,17 +195,32 @@ def detect(save_img=False):
     numWeapons = 0
     headDet = []
     weapDet = []
-    for path, img, im0s, vid_cap in dataset:        
+    frames = []
+    for path, img, im0s, vid_cap in dataset:
         print("\n")
         t1 = time_synchronized()
 
+        # Adding to frame
+        if(len(img.shape) >= 4):
+            myImg = np.dstack((img[0, 0], img[0, 1], img[0, 2]))
+        else:
+            myImg = np.dstack((img[0], img[1], img[2]))
+
+        if len(frames) > 5:
+            frames.pop(0)
+
+        # Starting with the actual detections
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
-        
+
         # Do first round of predictions
+        model = model1  # set pointer to model1
+        names = names1
+        colors = colors1
+
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
 
@@ -158,7 +247,7 @@ def detect(save_img=False):
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-                        
+
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 print(img.shape[2:], det[:, :4], im0.shape)
@@ -182,7 +271,7 @@ def detect(save_img=False):
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names2[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-        
+
         print("2nd Round")
         model = model2
         names = names2
@@ -243,10 +332,7 @@ def detect(save_img=False):
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Checking for Spider-Sense
-            sense = spider_sense(headDet, weapDet, im0, thres)
-            print(len(headDet))
-            print(sense[3])
-            print(len(weapDet[0]) > 0)
+            sense = spider_sense(headDet, weapDet, frames, im0, thres)
             if sense[0] or sense[1]:
                 cv2.putText(im0, "Spider-Sense Tingling!", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 5)
                 print("BIG PPPPPPPPPPPPPPPOOOOOOOOOOOOOPPPPPPP")

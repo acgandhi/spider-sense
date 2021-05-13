@@ -165,7 +165,6 @@ def detect(mtcnn, save_img=False):
         t1 = time_synchronized()
         
         # Starting first round of detections
-        actualImg = cv2.cvtColor(cv2.imread("/content/spider-sense/ivan_test_pics/white_ivan.png"), cv2.COLOR_BGR2RGB)
         myImg = np.dstack((img[0], img[1], img[2]))
 
         boxes = mtcnn.detect(myImg)
