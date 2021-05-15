@@ -98,56 +98,6 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
 
     return detections
 
-def old_spider_sense(headDet, weapDet, frames, im0, thres):
-    detections = [False, False]
-    headThres = {2: 0.21, 3: 0.15}
-    
-    # removing head detections that don't meet the necessary width threshold
-    headDet[-1] = [det for det in headDet[-1] if float((det[2]-det[0])/im0.shape[1]) >= headThres[thres]]
-    
-    # adding new detections from second last with current if >= 2 detections
-    if len(headDet) >= 2:
-        genDet(frames[-2], frames[-1], headDet[-2])
-        genDet(frames[-2], frames[-1], weapDet[-2])
-        
-    # Doing context check on remaining head and weapons and changing detections if needed
-    if len(headDet[-1]) and len(headDet) == 5:
-        for detection in headDet[-1]:
-            if type(detection) == bool:
-                continue
-            context = 0
-            tempDet = detection
-            for i in range(3, -1, -1):  # each frame
-                for j in range(0, len(headDet[i])):  # each detection in frame
-                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
-                        context += 1
-                        tempDet = headDet[i][j]
-                        break
-                if context != (4 - i):
-                    break
-            if context >= 3:
-                detections[0] = True
-                break
-    noContext = 0
-    if len(weapDet[-1]) > 0 and len(weapDet) == 5:
-        for detection in weapDet[-1]:
-            context = 0
-            tempDet = detection
-            for i in range(3, -1, -1):                  # each frame
-                for j in range(0, len(weapDet[i])):     # each detection in frame
-                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
-                        context += 1
-                        tempDet = weapDet[i][j]
-                        break
-                if context < (3-i):
-                    break
-            if context >= 3:
-                detections[1] = True
-                break
-
-    return detections
-
-
 def detect(save_img=False):
     numDet = []
     source, weights, weights2, view_img, save_txt, imgsz, thres = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size, opt.headThres
