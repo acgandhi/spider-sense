@@ -285,7 +285,6 @@ def detect(save_img=False):
             sense = spider_sense(headDet, weapDet, frames, im0, thres)
             if sense[0] or sense[1]:
                 cv2.putText(im0, "Spider-Sense Tingling!", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 5)
-                print("BIG PPPPPPPPPPPPPPPOOOOOOOOOOOOOPPPPPPP")
 
             # Stream results
             if view_img:
