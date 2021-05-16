@@ -54,7 +54,7 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}
 
     # removing head detections that don't meet the necessary width threshold
-    headDet[-1] = [det for det in headDet[-1] if float((det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
+    headDet[-1] = [det for det in headDet[-1] if ic(float((det[2] - det[0]) / im0.shape[1])) >= headThres[thres]]
 
     # adding new detections from second last with current if >= 2 detections
     if len(headDet) >= 2 and len(frames) >= 2:
@@ -276,7 +276,8 @@ def detect(save_img=False):
 
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names[int(cls)]} {conf:.2f}'
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+                        width = round(float((xyxy[2] - xyxy[0])/im0.shape[1]), 2)
+                        plot_one_box(xyxy, im0, label=label + " " + str(width), color=colors[int(cls)], line_thickness=3)
 
                 # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
