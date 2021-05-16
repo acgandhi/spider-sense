@@ -51,7 +51,7 @@ def genDet(oldFrame, frame, secDet):
 
 def spider_sense(headDet, weapDet, frames, im0, thres):
     detections = [False, False]
-    headThres = {2: 0.21, 3: 0.15}
+    headThres = {2: 0.21, 3: 0.15, 4: 0.09}
 
     # removing head detections that don't meet the necessary width threshold
     headDet[-1] = [det for det in headDet[-1] if float((det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
@@ -62,40 +62,41 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
         genDet(frames[-2], frames[-1], weapDet[-2])
 
     # Doing context check on remaining head and weapons and changing detections if needed
-    if len(headDet[-1]) and len(headDet) == 5:
+    if len(headDet[-1]) > 0 and len(headDet) == opt.filterLen:
         for detection in headDet[-1]:
             if type(detection) == bool:
                 continue
             context = 0
             tempDet = detection
-            for i in range(3, -1, -1):  # each frame
+            for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(headDet[i])):  # each detection in frame
                     if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
                         context += 1
                         tempDet = headDet[i][j]
                         break
-                if context != (4 - i):
+                if context != (opt.filterLen-2 - i):
                     break
-            if context >= 3:
+            if context >= opt.filterLen-2:
                 detections[0] = True
                 break
     noContext = 0
-    if len(weapDet[-1]) > 0 and len(weapDet) == 5:
+    if len(weapDet[-1]) > 0 and len(weapDet) == opt.filterLen:
         for detection in weapDet[-1]:
             context = 0
             tempDet = detection
-            for i in range(3, -1, -1):  # each frame
+            for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(weapDet[i])):  # each detection in frame
                     if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
                         context += 1
                         tempDet = weapDet[i][j]
                         break
-                if context < (3 - i):
+                if context < (opt.filterLen-2 - i):
                     break
-            if context >= 3:
+            if context >= opt.filterLen-2:
                 detections[1] = True
                 break
 
+    print(headDet[-1], weapDet[-1])
     return detections
 
 def detect(save_img=False):
@@ -127,6 +128,8 @@ def detect(save_img=False):
     # Set Dataloader
     vid_path, vid_writer = None, None
     if webcam:
+        if opt.saveWebcam:
+            save_img = True
         view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride1)
@@ -141,13 +144,15 @@ def detect(save_img=False):
     colors2 = [[random.randint(0, 255) for _ in range(3)] for _ in names2]
 
     # Run inference
+    numFrames = 1
     t0 = time.time()
     numWeapons = 0
     headDet = []
     weapDet = []
     frames = []
     for path, img, im0s, vid_cap in dataset:
-        print("\n")
+        print("\nFrame:", numFrames)
+        numFrames += 1
         t1 = time_synchronized()
 
         # Adding to frame
@@ -156,7 +161,7 @@ def detect(save_img=False):
         else:
             myImg = np.dstack((img[0], img[1], img[2]))
 
-        if len(frames) > 5:
+        if len(frames) > opt.filterLen:
             frames.pop(0)
 
         # Starting with the actual detections
@@ -185,7 +190,7 @@ def detect(save_img=False):
         for i, det in enumerate(pred):  # detections per image
             numDet.append(len(det))
             weapDet.append(det.clone())
-            if len(weapDet) > 5:
+            if len(weapDet) > opt.filterLen:
                 weapDet.pop(0)
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i], dataset.count
@@ -200,10 +205,8 @@ def detect(save_img=False):
 
             if len(det):
                 # Rescale boxes from img_size to im0 size
-                print(img.shape[2:], det[:, :4], im0.shape)
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
                 # for detection in det[:, :4]:
-                # print(str((detection[2]-detection[0])/im0.shape[1]))
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -242,7 +245,7 @@ def detect(save_img=False):
         for i, det in enumerate(pred):  # detections per image
             numWeapons += len(det)
             headDet.append(det.clone())
-            if len(headDet) > 5:
+            if len(headDet) > opt.filterLen:
                 headDet.pop(0)
             numDet.append(len(det))
             if webcam:  # batch_size >= 1
@@ -258,8 +261,6 @@ def detect(save_img=False):
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-                for detection in det[:, :4]:
-                    print(str((detection[2] - detection[0]) / im0.shape[1]))
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -295,9 +296,23 @@ def detect(save_img=False):
             if save_img:
                 if dataset.mode == 'image':
                     cv2.imwrite(save_path, im0)
+                elif webcam:
+                    if vid_path != save_path + ".mp4":
+                        vid_path = save_path + ".mp4"
+                        print("Save Path: ", save_path)
+                        if isinstance(vid_writer, cv2.VideoWriter):
+                            vid_writer.release()  # release previous video writer
+                            
+                        fourcc = 'mp4v'
+                        fps = dataset.fps
+                        w = dataset.w
+                        h = dataset.h
+                        vid_writer = cv2.VideoWriter(vid_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
+                    vid_writer.write(im0)
                 else:  # 'video'
                     if vid_path != save_path:  # new video
                         vid_path = save_path
+                        print("Save Path: ", save_path)
                         if isinstance(vid_writer, cv2.VideoWriter):
                             vid_writer.release()  # release previous video writer
 
@@ -308,6 +323,8 @@ def detect(save_img=False):
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
                     vid_writer.write(im0)
 
+    if isinstance(vid_writer, cv2.VideoWriter):
+        vid_writer.release()  # release previous video writer
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         # print(f"Results saved to {save_dir}{s}")
@@ -336,6 +353,8 @@ if __name__ == '__main__':
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--headThres', type=int, default=2)
+    parser.add_argument('--filterLen', type=int, default=5)
+    parser.add_argument('--saveWebcam', type=bool, default=False)
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
