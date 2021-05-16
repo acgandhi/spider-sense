@@ -54,7 +54,7 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}
 
     # removing head detections that don't meet the necessary width threshold
-    headDet[-1] = [det for det in headDet[-1] if ic(float((det[2] - det[0]) / im0.shape[1])) >= headThres[thres]]
+    headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
 
     # adding new detections from second last with current if >= 2 detections
     if len(headDet) >= 2 and len(frames) >= 2:
@@ -64,8 +64,6 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     # Doing context check on remaining head and weapons and changing detections if needed
     if len(headDet[-1]) > 0 and len(headDet) == opt.filterLen:
         for detection in headDet[-1]:
-            if type(detection) == bool:
-                continue
             context = 0
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
@@ -74,7 +72,7 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
                         context += 1
                         tempDet = headDet[i][j]
                         break
-                if context != (opt.filterLen-2 - i):
+                if context != (opt.filterLen - i):
                     break
             if context >= opt.filterLen-2:
                 detections[0] = True
@@ -90,7 +88,7 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
                         context += 1
                         tempDet = weapDet[i][j]
                         break
-                if context < (opt.filterLen-2 - i):
+                if context < (opt.filterLen - i):
                     break
             if context >= opt.filterLen-2:
                 detections[1] = True
@@ -151,6 +149,8 @@ def detect(save_img=False):
     frames = []
     for path, img, im0s, vid_cap in dataset:
         print("\nFrame:", numFrames)
+        if webcam:
+            print("FPS", dataset.fps)
         numFrames += 1
         t1 = time_synchronized()
 
