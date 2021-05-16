@@ -96,7 +96,6 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
                 detections[1] = True
                 break
 
-    print(headDet[-1], weapDet[-1])
     return detections
 
 def detect(save_img=False):
