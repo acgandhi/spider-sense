@@ -9,6 +9,7 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 from numpy import random
 import math
+import tensorflow as tf
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -30,31 +31,40 @@ def dist_check(tempDet, otherDet):
 def genDet(oldFrame, frame, secDet):
     # list of inner points
     innerPoints = []
+    # Parameters for lucas kanade optical flow
+    lk_params = dict( winSize  = (15,15),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
     # generating points
     offset = 10
     for i in range(0, len(secDet)):
-        inner = np.zeros((4, 1, 2), dtype=int)
-        width = float((secDet[i][2] - secDet[i][0]) / frame.shape[0])
-        height = float((secDet[i][3] - secDet[i][1]) / frame.shape[1])
-        inner[0][0][0] = width / 2 - (width / offset)
-        inner[0][0][1] = height / 2 + (height / offset)
-        inner[1][0][0] = width / 2 + (width / offset)
-        inner[1][0][1] = height / 2 - (height / offset)
-        inner[2][0][0] = width / 2 - (width / offset)
-        inner[2][0][1] = height / 2 - (height / offset)
-        inner[3][0][0] = width / 2 + (width / offset)
-        inner[3][0][1] = height / 2 + (height / offset)
+        inner = np.zeros((4, 1, 2), dtype=float)
+        width = secDet[i][2] - secDet[i][0]
+        height = secDet[i][3] - secDet[i][1]
+        centerX = secDet[i][0] + width/2
+        centerY = secDet[i][1] + height/2
+        inner[0][0][0] = centerX - (width / offset)
+        inner[0][0][1] = centerY - (height / offset)
+        inner[1][0][0] = centerX + (width / offset)
+        inner[1][0][1] = centerY - (height / offset)
+        inner[2][0][0] = centerX - (width / offset)
+        inner[2][0][1] = centerY + (height / offset)
+        inner[3][0][0] = centerX + (width / offset)
+        inner[3][0][1] = centerY + (height / offset)
+        print(secDet)
+        print(inner)
         innerPoints.append(inner)
     for point, det in zip(innerPoints, secDet):
         old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
-        frame_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
-        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point, None)
-        newCenter = [sum([pt[0] for pt in p1]) / 4, sum([pt[1] for pt in p1]) / 4]
-        width = float((det[2] - det[0]) / frame.shape[0])
-        height = float((det[3] - det[1]) / frame.shape[0])
-        secDet.append(torch.Tensor(
+        frame_gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point.astype('float32'), None, **lk_params)
+        print(p1)
+        newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
+        width = det[2] - det[0]
+        height = det[3] - det[1]
+        tf.concat([secDet, torch.Tensor(
             [newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2,
-             det[4], det[5]]))
+             det[4], det[5]])], 0)
 
 
 def spider_sense(headDet, weapDet, frames, im0, thres):
