@@ -9,7 +9,6 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 from numpy import random
 import math
-import tensorflow as tf
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -51,20 +50,20 @@ def genDet(oldFrame, frame, secDet):
         inner[2][0][1] = centerY + (height / offset)
         inner[3][0][0] = centerX + (width / offset)
         inner[3][0][1] = centerY + (height / offset)
-        print(secDet)
-        print(inner)
         innerPoints.append(inner)
     for point, det in zip(innerPoints, secDet):
         old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point.astype('float32'), None, **lk_params)
-        print(p1)
         newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
         width = det[2] - det[0]
         height = det[3] - det[1]
-        tf.concat([secDet, torch.Tensor(
-            [newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2,
-             det[4], det[5]])], 0)
+        if type(secDet) != list:
+            final = secDet.tolist()
+        else:
+            final = secDet
+        final.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
+        secDet = final
 
 
 def spider_sense(headDet, weapDet, frames, im0, thres):
