@@ -62,7 +62,7 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}
     
     # Saving latest detections if setting is there
-    if opt.saveDets:
+    #if opt.saveDets:
         
     
     # removing head detections that don't meet the necessary width threshold
