@@ -22,7 +22,9 @@ from icecream import ic
 
 def dist_check(tempDet, otherDet):
     perim = 2 * (tempDet[3] - tempDet[1]) + 2 * (tempDet[2] - tempDet[0])
-    return math.dist([tempDet[0]+(tempDet[2]-tempDet[0])/2, tempDet[1]+(tempDet[3]-tempDet[1])/2]], [otherDet[0]+(otherDet[2]-otherDet[0])/2, otherDet[1]+(otherDet[3]-otherDet[1])/2]]) < perim/2
+    width = otherDet[0]+(otherDet[2]-otherDet[0])/2 - tempDet[0]+(tempDet[2]-tempDet[0])/2
+    height = otherDet[0]+(otherDet[2]-otherDet[0])/2 - tempDet[0]+(tempDet[2]-tempDet[0])/2
+    return math.sqrt(width**2 + height**2) < perim/2
 
 
 def genDet(oldFrame, frame, secDet):
@@ -58,7 +60,11 @@ def genDet(oldFrame, frame, secDet):
 def spider_sense(headDet, weapDet, frames, im0, thres):
     detections = [False, False]
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}
-
+    
+    # Saving latest detections if setting is there
+    if opt.saveDets:
+        
+    
     # removing head detections that don't meet the necessary width threshold
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
 
@@ -74,8 +80,8 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(headDet[i])):  # each detection in frame
-                    #if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
-                     if dist_check(tempDet, headDet[i][j]):
+                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
+                    #if dist_check(tempDet, headDet[i][j]):
                         context += 1
                         tempDet = headDet[i][j]
                         break
@@ -91,8 +97,8 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(weapDet[i])):  # each detection in frame
-                    #if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
-                    if tempDet[5] == weapDet[i][j][5] and dist_check(tempDet, weapDet[i][j]):
+                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
+                    #if tempDet[5] == weapDet[i][j][5] and dist_check(tempDet, weapDet[i][j]):
                         context += 1
                         tempDet = weapDet[i][j]
                         break
@@ -167,7 +173,8 @@ def detect(save_img=False):
             myImg = np.dstack((img[0, 0], img[0, 1], img[0, 2]))
         else:
             myImg = np.dstack((img[0], img[1], img[2]))
-
+            
+        frames.append(myImg)
         if len(frames) > opt.filterLen:
             frames.pop(0)
 
@@ -363,6 +370,7 @@ if __name__ == '__main__':
     parser.add_argument('--headThres', type=int, default=2)
     parser.add_argument('--filterLen', type=int, default=5)
     parser.add_argument('--saveWebcam', type=bool, default=False)
+    parser.add_argument('--saveDets', type=bool, default=False)
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
