@@ -8,6 +8,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import numpy as np
 from numpy import random
+import math
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -17,6 +18,11 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 from icecream import ic
+
+
+def dist_check(tempDet, otherDet):
+    perim = 2 * (tempDet[3] - tempDet[1]) + 2 * (tempDet[2] - tempDet[0])
+    return math.dist([tempDet[0]+(tempDet[2]-tempDet[0])/2, tempDet[1]+(tempDet[3]-tempDet[1])/2]], [otherDet[0]+(otherDet[2]-otherDet[0])/2, otherDet[1]+(otherDet[3]-otherDet[1])/2]]) < perim/2
 
 
 def genDet(oldFrame, frame, secDet):
@@ -68,7 +74,8 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(headDet[i])):  # each detection in frame
-                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
+                    #if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
+                     if dist_check(tempDet, headDet[i][j]):
                         context += 1
                         tempDet = headDet[i][j]
                         break
@@ -84,7 +91,8 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(weapDet[i])):  # each detection in frame
-                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
+                    #if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
+                    if tempDet[5] == weapDet[i][j][5] and dist_check(tempDet, weapDet[i][j]):
                         context += 1
                         tempDet = weapDet[i][j]
                         break
