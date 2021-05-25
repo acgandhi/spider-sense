@@ -62,7 +62,9 @@ def genDet(oldFrame, frame, secDet):
         newBoxes.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
     if type(secDet) != list:
         secDet = secDet.tolist()
+    print(secDet, newBoxes)
     secDet.extend(newBoxes)
+    print(secDet)
     
 
 def spider_sense(headDet, weapDet, frames, im0, thres):
@@ -77,11 +79,11 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
 
     # adding new detections from second last with current if >= 2 detections
-    print("Generating New Detections", headDet[-2], weapDet[-2])
     if len(headDet) >= 2 and len(frames) >= 2:
+        print("Generating New Detections", len(headDet[-2]), len(weapDet[-2]))
         genDet(frames[-2], frames[-1], headDet[-2])
         genDet(frames[-2], frames[-1], weapDet[-2])
-    print("Done:", headDet[-2], weapDet[-2])
+        print("Done:", len(headDet[-2]), len(weapDet[-2]))
 
     # Doing context check on remaining head and weapons and changing detections if needed
     if len(headDet[-1]) > 0 and len(headDet) == opt.filterLen:
