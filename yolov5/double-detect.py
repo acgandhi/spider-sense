@@ -51,6 +51,7 @@ def genDet(oldFrame, frame, secDet):
         inner[3][0][0] = centerX + (width / offset)
         inner[3][0][1] = centerY + (height / offset)
         innerPoints.append(inner)
+    newBoxes = []
     for point, det in zip(innerPoints, secDet):
         old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
@@ -58,13 +59,11 @@ def genDet(oldFrame, frame, secDet):
         newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
         width = det[2] - det[0]
         height = det[3] - det[1]
-        if type(secDet) != list:
-            final = secDet.tolist()
-        else:
-            final = secDet
-        final.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
-        secDet = final
-
+        newBoxes.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
+    if type(secDet) != list:
+        secDet = secDet.tolist()
+    secDet.extend(newBoxes)
+    
 
 def spider_sense(headDet, weapDet, frames, im0, thres):
     detections = [False, False]
@@ -78,9 +77,11 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
 
     # adding new detections from second last with current if >= 2 detections
+    print("Generating New Detections", headDet[-2], weapDet[-2])
     if len(headDet) >= 2 and len(frames) >= 2:
         genDet(frames[-2], frames[-1], headDet[-2])
         genDet(frames[-2], frames[-1], weapDet[-2])
+    print("Done:", headDet[-2], weapDet[-2])
 
     # Doing context check on remaining head and weapons and changing detections if needed
     if len(headDet[-1]) > 0 and len(headDet) == opt.filterLen:
