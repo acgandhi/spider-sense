@@ -27,7 +27,9 @@ def dist_check(tempDet, otherDet):
     return math.sqrt(width**2 + height**2) < perim/2
 
 
-def genDet(oldFrame, frame, secDet):
+def genDet(oldFrame, frame, secDet, mask):
+    # Create some random colors
+    color = np.random.randint(0,255,(100,3))
     # list of inner points
     innerPoints = []
     # Parameters for lucas kanade optical flow
@@ -56,6 +58,14 @@ def genDet(oldFrame, frame, secDet):
         old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point.astype('float32'), None, **lk_params)
+        if opt.flowShow:
+            for i,(new,old) in enumerate(zip(p1, point)):
+                a,b = new.ravel()
+                c,d = old.ravel()
+                a, b, c, d = int(a), int(b), int(c), int(d)
+                mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
+                frame = cv2.circle(frame,(a,b),5,color[i].tolist(),-1)
+                frame = cv2.add(frame, mask)
         newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
         width = det[2] - det[0]
         height = det[3] - det[1]
@@ -67,7 +77,7 @@ def genDet(oldFrame, frame, secDet):
     print(secDet)
     
 
-def spider_sense(headDet, weapDet, frames, im0, thres):
+def spider_sense(headDet, weapDet, frames, im0, thres, mask):
     detections = [False, False]
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}
     
@@ -81,8 +91,8 @@ def spider_sense(headDet, weapDet, frames, im0, thres):
     # adding new detections from second last with current if >= 2 detections
     if len(headDet) >= 2 and len(frames) >= 2:
         print("Generating New Detections", len(headDet[-2]), len(weapDet[-2]))
-        genDet(frames[-2], frames[-1], headDet[-2])
-        genDet(frames[-2], frames[-1], weapDet[-2])
+        genDet(frames[-2], frames[-1], headDet[-2], mask)
+        genDet(frames[-2], frames[-1], weapDet[-2], mask)
         print("Done:", len(headDet[-2]), len(weapDet[-2]))
 
     # Doing context check on remaining head and weapons and changing detections if needed
@@ -173,6 +183,7 @@ def detect(save_img=False):
     headDet = []
     weapDet = []
     frames = []
+    mask = None
     for path, img, im0s, vid_cap in dataset:
         print("\nFrame:", numFrames)
         if webcam:
@@ -185,6 +196,10 @@ def detect(save_img=False):
             myImg = np.dstack((img[0, 0], img[0, 1], img[0, 2]))
         else:
             myImg = np.dstack((img[0], img[1], img[2]))
+        
+        # Creating mask
+        if mask is None:
+            mask = np.zeros_like(myImg)
             
         frames.append(myImg)
         if len(frames) > opt.filterLen:
@@ -310,7 +325,7 @@ def detect(save_img=False):
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Checking for Spider-Sense
-            sense = spider_sense(headDet, weapDet, frames, im0, thres)
+            sense = spider_sense(headDet, weapDet, frames, im0, thres, mask)
             if sense[0] or sense[1]:
                 cv2.putText(im0, "Spider-Sense Tingling!", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 5)
 
@@ -383,6 +398,7 @@ if __name__ == '__main__':
     parser.add_argument('--filterLen', type=int, default=5)
     parser.add_argument('--saveWebcam', type=bool, default=False)
     parser.add_argument('--saveDets', type=bool, default=False)
+    parser.add_argument('--flowShow', type=bool, default=False)
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
