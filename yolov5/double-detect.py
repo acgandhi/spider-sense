@@ -365,7 +365,11 @@ def detect(save_img=False):
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
-                    vid_writer.write(im0)
+                    if opt.flowShow:
+                        thisMask = cv2.resize(mask, (im0.shape[1], im0.shape[0]))
+                        print(im0.shape, thisMask.shape)
+                        im0 = cv2.add(im0, thisMask)
+                    vid_writer.write(thisMask)
 
     if isinstance(vid_writer, cv2.VideoWriter):
         vid_writer.release()  # release previous video writer

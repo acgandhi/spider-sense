@@ -6,6 +6,7 @@ Created on Tue May 11 22:07:32 2021
 
 import numpy as np
 import cv2
+import time
 
 cap = cv2.VideoCapture(0)
 
@@ -26,7 +27,9 @@ color = np.random.randint(0,255,(100,3))
 # Take first frame and find corners in it
 ret, old_frame = cap.read()
 old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+t0 = time.time()
 p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+t1 = time.time() - t0
 print(p0)
 print(type(p0))
 print(p0.shape)
