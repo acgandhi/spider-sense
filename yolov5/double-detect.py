@@ -64,8 +64,6 @@ def genDet(oldFrame, frame, secDet, mask):
                 c,d = old.ravel()
                 a, b, c, d = int(a), int(b), int(c), int(d)
                 mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
-                frame = cv2.circle(frame,(a,b),5,color[i].tolist(),-1)
-                frame = cv2.add(frame, mask)
         newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
         width = det[2] - det[0]
         height = det[3] - det[1]
@@ -350,7 +348,11 @@ def detect(save_img=False):
                         w = dataset.w
                         h = dataset.h
                         vid_writer = cv2.VideoWriter(vid_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
-                    vid_writer.write(im0)
+                    if opt.flowShow:
+                        thisMask = cv2.resize(mask, (im0.shape[1], im0.shape[0]))
+                        print(im0.shape, thisMask.shape)
+                        im0 = cv2.add(im0, thisMask)
+                    vid_writer.write(thisMask)
                 else:  # 'video'
                     if vid_path != save_path:  # new video
                         vid_path = save_path
