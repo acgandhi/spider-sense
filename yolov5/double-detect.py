@@ -70,9 +70,7 @@ def genDet(oldFrame, frame, secDet, mask):
         newBoxes.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
     if type(secDet) != list:
         secDet = secDet.tolist()
-    print(secDet, newBoxes)
     secDet.extend(newBoxes)
-    print(secDet)
     
 
 def spider_sense(headDet, weapDet, frames, im0, thres, mask):
@@ -182,6 +180,8 @@ def detect(save_img=False):
     weapDet = []
     frames = []
     mask = None
+    detCount = 1
+    itCount = 0
     for path, img, im0s, vid_cap in dataset:
         print("\nFrame:", numFrames)
         if webcam:
@@ -263,6 +263,21 @@ def detect(save_img=False):
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names2[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+
+                # Save dets if needed
+                if opt.saveDets:
+                        weapons = {0: "pistols", 1: "knife"}
+                        if os.path.exists(save_path + "/pistols/") is False:
+                            os.makedirs(save_path + "/pistols/")
+                            os.makedirs(save_path + "/knife/")
+                        weapImg = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
+                        print(weapImg.shape, detCount)
+                        detPath = save_path + "/" + weapons[int(cls)] + "/" + str(detCount) + ".jpg"
+                        print("Det Path", detPath)
+                        if weapImg.shape[0] > 0 and weapImg.shape[1] > 0:
+                            cv2.imwrite(detPath, weapImg)                    
+                            detCount += 1
+
 
         print("2nd Round")
         model = model2
@@ -350,9 +365,8 @@ def detect(save_img=False):
                         vid_writer = cv2.VideoWriter(vid_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
                     if opt.flowShow:
                         thisMask = cv2.resize(mask, (im0.shape[1], im0.shape[0]))
-                        print(im0.shape, thisMask.shape)
                         im0 = cv2.add(im0, thisMask)
-                    vid_writer.write(thisMask)
+                    vid_writer.write(im0)
                 else:  # 'video'
                     if vid_path != save_path:  # new video
                         vid_path = save_path
@@ -367,9 +381,13 @@ def detect(save_img=False):
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
                     if opt.flowShow:
                         thisMask = cv2.resize(mask, (im0.shape[1], im0.shape[0]))
-                        print(im0.shape, thisMask.shape)
                         im0 = cv2.add(im0, thisMask)
-                    vid_writer.write(thisMask)
+                    vid_writer.write(im0)
+          
+        # Checking break condition
+        if itCount == opt.maxFrames:
+            break
+        itCount += 1
 
     if isinstance(vid_writer, cv2.VideoWriter):
         vid_writer.release()  # release previous video writer
@@ -405,6 +423,7 @@ if __name__ == '__main__':
     parser.add_argument('--saveWebcam', type=bool, default=False)
     parser.add_argument('--saveDets', type=bool, default=False)
     parser.add_argument('--flowShow', type=bool, default=False)
+    parser.add_argument('--maxFrames', type=int, default=-1)
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
