@@ -5,11 +5,12 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
+import numpy as np
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
-    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path, save_one_box
+    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path, save_one_box, bbox_iou
 from utils.plots import colors, plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
@@ -75,6 +76,9 @@ def spider_sense(headDet, weapDet, frames, im0, thres, mask):
     
     # removing head detections that don't meet the necessary width threshold
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
+
+    # removing weapon detections that are too wide
+    weapDet[-1] = [det for det in weapDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) < 0.5]
 
     # adding new detections from second last with current if >= 2 detections
     if len(headDet) >= 2 and len(frames) >= 2:
@@ -143,6 +147,8 @@ def detect(save_img=False):
     model2 = attempt_load(weights2, map_location=device)
     stride1 = int(model1.stride.max())  # model strides
     stride2 = int(model2.stride.max())  # model 2 strides
+    names1 = model1.module.names if hasattr(model1, 'module') else model1.names
+    names2 = model2.module.names if hasattr(model2, 'module') else model2.names
     imgsz = check_img_size(imgsz, s=stride1)  # check img_size
     if half:
         model1.half()  # to FP16
@@ -257,7 +263,7 @@ def detect(save_img=False):
                         label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
                         plot_one_box(xyxy, im0, label=label, color=colors(c, True), line_thickness=opt.line_thickness)
                         if opt.save_crop:
-                            save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                            save_one_box(xyxy, imc, file=Path(save_path + '_crops') / names[c] / f'{p.stem}.jpg', BGR=True)
 
 
         print("2nd Round")
@@ -309,9 +315,8 @@ def detect(save_img=False):
                     if save_img or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
                         label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
-                        plot_one_box(xyxy, im0, label=label, color=colors(c, True), line_thickness=opt.line_thickness)
-                        if opt.save_crop:
-                            save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                        width = round(float((xyxy[2] - xyxy[0])/im0.shape[1]), 2)
+                        plot_one_box(xyxy, im0, label=label + " " + str(width), color=colors(c, True), line_thickness=opt.line_thickness)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
@@ -392,7 +397,6 @@ if __name__ == '__main__':
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
-    parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
@@ -404,6 +408,8 @@ if __name__ == '__main__':
     parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
+    parser.add_argument('--save-crop', default=False)
+    parser.add_argument('--headThres', type=int, default=4)
     parser.add_argument('--filterLen', type=int, default=5)
     parser.add_argument('--saveWebcam', type=bool, default=False)
     parser.add_argument('--flowShow', type=bool, default=False)
