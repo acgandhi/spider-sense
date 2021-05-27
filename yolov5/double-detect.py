@@ -1,20 +1,16 @@
 import argparse
 import time
 from pathlib import Path
-import os
 
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-import numpy as np
-from numpy import random
-import math
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
-    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path, bbox_iou
-from utils.plots import plot_one_box
+    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path, save_one_box
+from utils.plots import colors, plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 from icecream import ic
@@ -75,11 +71,7 @@ def genDet(oldFrame, frame, secDet, mask):
 
 def spider_sense(headDet, weapDet, frames, im0, thres, mask):
     detections = [False, False]
-    headThres = {2: 0.21, 3: 0.15, 4: 0.09}
-    
-    # Saving latest detections if setting is there
-    #if opt.saveDets:
-        
+    headThres = {2: 0.21, 3: 0.15, 4: 0.09}        
     
     # removing head detections that don't meet the necessary width threshold
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
@@ -128,9 +120,11 @@ def spider_sense(headDet, weapDet, frames, im0, thres, mask):
 
     return detections
 
+
+@torch.no_grad()
 def detect(save_img=False):
-    numDet = []
     source, weights, weights2, view_img, save_txt, imgsz, thres = opt.source, opt.weights, opt.weights2, opt.view_img, opt.save_txt, opt.img_size, opt.headThres
+    save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
 
@@ -154,6 +148,12 @@ def detect(save_img=False):
         model1.half()  # to FP16
         model2.half()  # to FP16 too
 
+    # Second-stage classifier
+    classify = False
+    if classify:
+        modelc = load_classifier(name='resnet101', n=2)  # initialize
+        modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
+
     # Set Dataloader
     vid_path, vid_writer = None, None
     if webcam:
@@ -166,12 +166,6 @@ def detect(save_img=False):
         save_img = True
         dataset = LoadImages(source, img_size=imgsz, stride=stride1)
 
-    # Get names and colors
-    names1 = model1.module.names if hasattr(model1, 'module') else model1.names
-    names2 = model2.module.names if hasattr(model2, 'module') else model2.names
-    colors1 = [[random.randint(0, 255) for _ in range(3)] for _ in names1]
-    colors2 = [[random.randint(0, 255) for _ in range(3)] for _ in names2]
-
     # Run inference
     numFrames = 1
     t0 = time.time()
@@ -180,13 +174,10 @@ def detect(save_img=False):
     weapDet = []
     frames = []
     mask = None
-    detCount = 1
-    itCount = 0
     for path, img, im0s, vid_cap in dataset:
         print("\nFrame:", numFrames)
         if webcam:
             print("FPS", dataset.fps)
-        numFrames += 1
         t1 = time_synchronized()
 
         # Adding to frame
@@ -198,7 +189,8 @@ def detect(save_img=False):
         # Creating mask
         if mask is None:
             mask = np.zeros_like(myImg)
-            
+        
+        # Appending frames
         frames.append(myImg)
         if len(frames) > opt.filterLen:
             frames.pop(0)
@@ -213,21 +205,21 @@ def detect(save_img=False):
         # Do first round of predictions
         model = model1  # set pointer to model1
         names = names1
-        colors = colors1
-
-        if device.type != 'cpu':
-            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
 
         # Inference
         pred = model(img, augment=opt.augment)[0]
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms,
+                                   max_det=opt.max_det)
         t2 = time_synchronized()
+
+        # Apply Classifier
+        if classify:
+            pred = apply_classifier(pred, modelc, img, im0s)
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            numDet.append(len(det))
             weapDet.append(det.clone())
             if len(weapDet) > opt.filterLen:
                 weapDet.pop(0)
@@ -241,7 +233,7 @@ def detect(save_img=False):
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-
+            imc = im0.copy() if opt.save_crop else im0  # for opt.save_crop
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -261,38 +253,23 @@ def detect(save_img=False):
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if save_img or view_img:  # Add bbox to image
-                        label = f'{names2[int(cls)]} {conf:.2f}'
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-
-                # Save dets if needed
-                if opt.saveDets:
-                        weapons = {0: "pistols", 1: "knife"}
-                        if os.path.exists(save_path + "/pistols/") is False:
-                            os.makedirs(save_path + "/pistols/")
-                            os.makedirs(save_path + "/knife/")
-                        weapImg = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
-                        print(weapImg.shape, detCount)
-                        detPath = save_path + "/" + weapons[int(cls)] + "/" + str(detCount) + ".jpg"
-                        print("Det Path", detPath)
-                        if weapImg.shape[0] > 0 and weapImg.shape[1] > 0:
-                            cv2.imwrite(detPath, weapImg)                    
-                            detCount += 1
+                        c = int(cls)  # integer class
+                        label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
+                        plot_one_box(xyxy, im0, label=label, color=colors(c, True), line_thickness=opt.line_thickness)
+                        if opt.save_crop:
+                            save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
 
         print("2nd Round")
         model = model2
         names = names2
-        colors = colors2
-
-        # Do second round of predictions
-        if device.type != 'cpu':
-            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model2.parameters())))  # run once
 
         # Inference
         pred = model(img, augment=opt.augment)[0]
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms,
+                                   max_det=opt.max_det)
         t2 = time_synchronized()
 
         # Process detections
@@ -301,7 +278,6 @@ def detect(save_img=False):
             headDet.append(det.clone())
             if len(headDet) > opt.filterLen:
                 headDet.pop(0)
-            numDet.append(len(det))
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i], dataset.count
             else:
@@ -312,6 +288,7 @@ def detect(save_img=False):
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            imc = im0.copy() if opt.save_crop else im0  # for opt.save_crop
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -330,11 +307,13 @@ def detect(save_img=False):
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if save_img or view_img:  # Add bbox to image
-                        label = f'{names[int(cls)]} {conf:.2f}'
-                        width = round(float((xyxy[2] - xyxy[0])/im0.shape[1]), 2)
-                        plot_one_box(xyxy, im0, label=label + " " + str(width), color=colors[int(cls)], line_thickness=3)
+                        c = int(cls)  # integer class
+                        label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
+                        plot_one_box(xyxy, im0, label=label, color=colors(c, True), line_thickness=opt.line_thickness)
+                        if opt.save_crop:
+                            save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
-                # Print time (inference + NMS)
+            # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Checking for Spider-Sense
@@ -385,9 +364,10 @@ def detect(save_img=False):
                     vid_writer.write(im0)
           
         # Checking break condition
-        if itCount == opt.maxFrames:
-            break
-        itCount += 1
+        if numFrames == opt.maxFrames:
+            break        
+        numFrames += 1
+
 
     if isinstance(vid_writer, cv2.VideoWriter):
         vid_writer.release()  # release previous video writer
@@ -405,12 +385,15 @@ if __name__ == '__main__':
     parser.add_argument('--weights2', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='data/images', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.6, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
+    parser.add_argument('--max-det', type=int, default=1000, help='maximum number of detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
+    parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
+    parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
@@ -418,10 +401,11 @@ if __name__ == '__main__':
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--headThres', type=int, default=2)
+    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
+    parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--filterLen', type=int, default=5)
     parser.add_argument('--saveWebcam', type=bool, default=False)
-    parser.add_argument('--saveDets', type=bool, default=False)
     parser.add_argument('--flowShow', type=bool, default=False)
     parser.add_argument('--maxFrames', type=int, default=-1)
     opt = parser.parse_args()
