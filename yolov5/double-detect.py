@@ -1,4 +1,5 @@
 import argparse
+import math
 import time
 from pathlib import Path
 
@@ -24,7 +25,7 @@ def dist_check(tempDet, otherDet):
     return math.sqrt(width**2 + height**2) < perim/2
 
 
-def genDet(oldFrame, frame, secDet, mask):
+def genDet(oldFrame, frame, secDet, mask, device):
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
     # list of inner points
@@ -55,22 +56,23 @@ def genDet(oldFrame, frame, secDet, mask):
         old_gray = cv2.cvtColor(cv2.cvtColor(oldFrame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
         p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, point.astype('float32'), None, **lk_params)
+        p1 = p1[st == 1]
         if opt.flowShow:
             for i,(new,old) in enumerate(zip(p1, point)):
                 a,b = new.ravel()
                 c,d = old.ravel()
                 a, b, c, d = int(a), int(b), int(c), int(d)
                 mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
-        newCenter = [sum([pt[0][0] for pt in p1]) / 4, sum([pt[0][1] for pt in p1]) / 4]
+        newCenter = np.average(p1, axis=0)
         width = det[2] - det[0]
         height = det[3] - det[1]
-        newBoxes.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]))
+        newBoxes.append(torch.Tensor([newCenter[0] - width / 2, newCenter[1] - height / 2, newCenter[0] + width / 2, newCenter[1] + height / 2, det[4], det[5]]).to(device))
     if type(secDet) != list:
         secDet = secDet.tolist()
     secDet.extend(newBoxes)
     
 
-def spider_sense(headDet, weapDet, frames, im0, thres, mask):
+def spider_sense(headDet, weapDet, frames, im0, thres, mask, device):
     detections = [False, False]
     headThres = {2: 0.21, 3: 0.15, 4: 0.09}        
     
@@ -78,13 +80,13 @@ def spider_sense(headDet, weapDet, frames, im0, thres, mask):
     headDet[-1] = [det for det in headDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) >= headThres[thres]]
 
     # removing weapon detections that are too wide
-    weapDet[-1] = [det for det in weapDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) < 0.5]
+    weapDet[-1] = [det for det in weapDet[-1] if float(2 * (det[2] - det[0]) / im0.shape[1]) < 0.8]
 
     # adding new detections from second last with current if >= 2 detections
-    if len(headDet) >= 2 and len(frames) >= 2:
+    if opt.genDet and (len(headDet) >= 2 and len(frames) >= 2):
         print("Generating New Detections", len(headDet[-2]), len(weapDet[-2]))
-        genDet(frames[-2], frames[-1], headDet[-2], mask)
-        genDet(frames[-2], frames[-1], weapDet[-2], mask)
+        genDet(frames[-2], frames[-1], headDet[-2], mask, device)
+        genDet(frames[-2], frames[-1], weapDet[-2], mask, device)
         print("Done:", len(headDet[-2]), len(weapDet[-2]))
 
     # Doing context check on remaining head and weapons and changing detections if needed
@@ -94,12 +96,12 @@ def spider_sense(headDet, weapDet, frames, im0, thres, mask):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(headDet[i])):  # each detection in frame
-                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.1542:
-                    #if dist_check(tempDet, headDet[i][j]):
+                    if bbox_iou(tempDet, headDet[i][j], DIoU=True) >= 0.3:
+                    # if dist_check(tempDet, headDet[i][j]):
                         context += 1
                         tempDet = headDet[i][j]
                         break
-                if context != (opt.filterLen - i):
+                if context != (opt.filterLen - i - 1):
                     break
             if context >= opt.filterLen-2:
                 detections[0] = True
@@ -111,12 +113,14 @@ def spider_sense(headDet, weapDet, frames, im0, thres, mask):
             tempDet = detection
             for i in range(opt.filterLen-2, -1, -1):  # each frame
                 for j in range(0, len(weapDet[i])):  # each detection in frame
-                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.1542:
-                    #if tempDet[5] == weapDet[i][j][5] and dist_check(tempDet, weapDet[i][j]):
+                    if tempDet[5] == weapDet[i][j][5] and bbox_iou(tempDet, weapDet[i][j], DIoU=True) >= 0.3:
+                    # if tempDet[5] == weapDet[i][j][5] and dist_check(tempDet, weapDet[i][j]):
                         context += 1
                         tempDet = weapDet[i][j]
                         break
-                if context < (opt.filterLen - i):
+                print("Context", context)
+                print("filterLen - i - 1", opt.filterLen - i - 1)
+                if context != (opt.filterLen - i - 1):
                     break
             if context >= opt.filterLen-2:
                 detections[1] = True
@@ -322,12 +326,15 @@ def detect(save_img=False):
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Checking for Spider-Sense
-            sense = spider_sense(headDet, weapDet, frames, im0, thres, mask)
+            sense = spider_sense(headDet, weapDet, frames, im0, thres, mask, device)
             if sense[0] or sense[1]:
                 cv2.putText(im0, "Spider-Sense Tingling!", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 5)
 
             # Stream results
             if view_img:
+                if opt.flowShow:
+                    thisMask = cv2.resize(mask, (im0.shape[1], im0.shape[0]))
+                    im0 = cv2.add(im0, thisMask)
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
@@ -411,9 +418,10 @@ if __name__ == '__main__':
     parser.add_argument('--save-crop', default=False)
     parser.add_argument('--headThres', type=int, default=4)
     parser.add_argument('--filterLen', type=int, default=5)
-    parser.add_argument('--saveWebcam', type=bool, default=False)
-    parser.add_argument('--flowShow', type=bool, default=False)
+    parser.add_argument('--saveWebcam', action='store_true')
+    parser.add_argument('--flowShow', action='store_true')
     parser.add_argument('--maxFrames', type=int, default=-1)
+    parser.add_argument('--genDet', action='store_true')
     opt = parser.parse_args()
     print(opt)
     # check_requirements()
