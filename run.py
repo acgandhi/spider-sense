@@ -47,6 +47,11 @@ if __name__ == '__main__':
 
     t = time.time()
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=args.resize_out_ratio)
+    print("humans", len(humans), humans)
+    if len(humans) > 0:
+        print(type(humans[0].body_parts))
+        if 7 in humans[0].body_parts.keys():
+            print(humans[0].body_parts[7])
     elapsed = time.time() - t
 
     logger.info('inference image: %s in %.4f seconds.' % (args.image, elapsed))
