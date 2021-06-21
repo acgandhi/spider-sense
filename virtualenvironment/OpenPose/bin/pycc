@@ -1,0 +1,3 @@
+#!/mnt/c/Users/derph/OneDrive/Desktop/Software/AI Adventures/Spider Sense/tf-pose-estimation-master/virtualenvironment/OpenPose/bin/python
+from numba.pycc import main
+main()

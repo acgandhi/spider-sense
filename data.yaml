@@ -1,5 +1,0 @@
-train: /content/export/train/images
-val: /content/export/valid/images
-
-nc: 3
-names: ['pistol', 'knife', 'rifle']
