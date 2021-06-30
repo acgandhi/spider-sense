@@ -208,6 +208,13 @@ def detect(model="mobilenet_thin", # A model option for being cool
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
+                
+                # Check if any overlap between keypoint and det (handheld weapon)
+                for detection in det:
+                    for crop in crops:
+                        if bbox_iou(detection, crop) > 0:
+                            cv2.putText(im0, "Spider-Sense Tingling!", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 5)
+                
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
                     if save_txt:  # Write to file
