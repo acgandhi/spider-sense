@@ -39,7 +39,6 @@ settle for the shoulders
 def getKeyPoints(img, e, w, h):
     # Running inference
     print("shape", img.shape)
-    cv2.imwrite("./runs/detect/anImage.jpg", img)
     humans = e.inference(img, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     print("humans", humans)
     
@@ -190,7 +189,7 @@ def detect(model="mobilenet_thin", # A model option for being cool
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
-                p, s, im0, frame = path[i], f'{i}: ', im0s[i], dataset.count
+                p, s, im0, frame = path[i], f'{i}: ', im0s[i].copy(), dataset.count
             else:
                 p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
             
