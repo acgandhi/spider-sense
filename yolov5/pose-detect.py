@@ -37,6 +37,10 @@ keypoints will preferably be the wrists but if no wrists are detected it will
 settle for the shoulders
 """
 def getKeyPoints(img, e, w, h):
+    # is image a list
+    if type(img) == list:
+        img = img[0]
+    
     # Running inference
     print("shape", img.shape)
     humans = e.inference(img, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
@@ -45,32 +49,38 @@ def getKeyPoints(img, e, w, h):
     # Getting keypoints
     KP = []
     for human in humans:
+        head = human.get_face_box(w, h)
+        if type(head) == dict:
+            headWidth = head["w"]
+        else:
+            headWidth = w/10
         parts = human.body_parts
         hasWrist = False
         
         # Searching for wrists
         if 7 in parts:
-            KP.append(parts[7])
+            KP.append([parts[7], headWidth])
             hasWrist = True
         if 4 in parts:
-            KP.append(parts[4])
+            KP.append([parts[4], headWidth])
             hasWrist = True
             
         # if no wrists at all then settles for shoulders
         if hasWrist is False:
             if 2 in parts:
-                KP.append(parts[2])
+                KP.append([parts[2], headWidth])
             if 5 in parts:
-                KP.append(parts[5])       
+                KP.append([parts[5], headWidth])       
     return KP, humans
 
 """
 Function for getting the crop of an image.  Will look at 1/(factor ^ 2) of img
 """
-def getCrop(point, img, factor, device):
-    pointX = round(img.shape[3] * point.x) 
-    pointY = round(img.shape[2] * point.y)
-    cropWidth = round(img.shape[3] / factor / 2)
+def getCrop(point, img, factor, device, cropWidth):
+    if type(img) == list:
+        img = img[0]
+    pointX = round(img.shape[1] * point.x)
+    pointY = round(img.shape[0] * point.y)
     lowX = pointX - cropWidth
     upX = pointX + cropWidth
     lowY = pointY - cropWidth
@@ -168,7 +178,7 @@ def detect(model="mobilenet_thin", # A model option for being cool
         print("\n")
         myImg = im0s.copy()
         keypoints, humans = getKeyPoints(myImg, e, w, h)
-        crops = [getCrop(point, img, 10, device) for point in keypoints] 
+        crops = [getCrop(point[0], myImg, 10, device, point[1]/2) for point in keypoints] 
         
         # Inference
         t1 = time_synchronized()
