@@ -53,7 +53,7 @@ def getKeyPoints(img, e, w, h):
         if type(head) == dict:
             headWidth = head["w"]
         else:
-            headWidth = w/10
+            headWidth = w/4
         parts = human.body_parts
         hasWrist = False
         
@@ -65,11 +65,11 @@ def getKeyPoints(img, e, w, h):
             KP.append([parts[4], headWidth])
             hasWrist = True
             
-        # if no wrists at all then settles for shoulders
+        # if no wrists at all then settles for elbows
         if hasWrist is False:
-            if 2 in parts:
+            if 3 in parts:
                 KP.append([parts[2], headWidth])
-            if 5 in parts:
+            if 6 in parts:
                 KP.append([parts[5], headWidth])       
     return KP, humans
 
